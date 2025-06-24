@@ -592,6 +592,28 @@ void publish_odometry(const ros::Publisher & pubOdomAftMapped)
     odomAftMapped.child_frame_id = "body";
     odomAftMapped.header.stamp = ros::Time().fromSec(lidar_end_time);// ros::Time().fromSec(lidar_end_time);
     set_posestamp(odomAftMapped.pose);
+
+    /* -------- twist.linear (机体系) -------- */
+    Eigen::Vector3d vel_body = state_point.rot.conjugate() * state_point.vel;
+    odomAftMapped.twist.twist.linear.x = vel_body.x();
+    odomAftMapped.twist.twist.linear.y = vel_body.y();
+    odomAftMapped.twist.twist.linear.z = vel_body.z();
+
+    /* -------- twist.angular (机体系) -------- */
+    static Eigen::Quaterniond q_last = state_point.rot;
+    static double             t_last = lidar_end_time;
+    double dt = lidar_end_time - t_last;
+    if (dt > 1e-3) {
+        Eigen::Quaterniond dq = q_last.conjugate() * state_point.rot;
+        Eigen::AngleAxisd  ax(dq);
+        Eigen::Vector3d    omega_body = ax.axis() * ax.angle() / dt;
+        odomAftMapped.twist.twist.angular.x = omega_body.x();
+        odomAftMapped.twist.twist.angular.y = omega_body.y();
+        odomAftMapped.twist.twist.angular.z = omega_body.z();
+        q_last = state_point.rot;
+        t_last = lidar_end_time;
+    }
+    
     pubOdomAftMapped.publish(odomAftMapped);
     auto P = kf.get_P();
     for (int i = 0; i < 6; i ++)
