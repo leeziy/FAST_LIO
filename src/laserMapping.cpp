@@ -36,6 +36,7 @@
 #include <mutex>
 #include <math.h>
 #include <thread>
+#include <pthread.h>
 #include <fstream>
 #include <csignal>
 #include <unistd.h>
@@ -71,11 +72,6 @@ double T1[MAXN], s_plot[MAXN], s_plot2[MAXN], s_plot3[MAXN], s_plot4[MAXN], s_pl
 double match_time = 0, solve_time = 0, solve_const_H_time = 0;
 int    kdtree_size_st = 0, kdtree_size_end = 0, add_point_size = 0, kdtree_delete_counter = 0;
 bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false, extrinsic_est_en = true, path_en = true;
-/**************************/
-
-/********** WCET **********/
-#include <atomic>
-std::atomic<double> g_wcet{0.0}; 
 /**************************/
 
 float res_last[100000] = {0.0};
@@ -148,13 +144,7 @@ shared_ptr<ImuProcess> p_imu(new ImuProcess());
 void SigHandle(int sig)
 {
     flg_exit = true;
-    ROS_WARN("catch sig %d", sig);
-
-    /********** WCET **********/
-    double worst = g_wcet.load();
-    ROS_WARN("=== Worst-case execution time per frame: %.0f us ===", worst * 1000000);
-    /**************************/
-    
+    ROS_WARN("catch sig %d", sig);   
     sig_buffer.notify_all();
 }
 
@@ -678,7 +668,12 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
     /** closest surface search and residual computation **/
     #ifdef MP_EN
         omp_set_num_threads(MP_PROC_NUM);
-        #pragma omp parallel for
+        #pragma omp parallel
+        {
+        char th_name[16];
+        snprintf(th_name, sizeof(th_name), "lio_omp_%1d", omp_get_thread_num());
+        pthread_setname_np(pthread_self(), th_name);
+        #pragma omp for schedule(static)
     #endif
     for (int i = 0; i < feats_down_size; i++)
     {
@@ -724,6 +719,9 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
             }
         }
     }
+    #ifdef MP_EN
+    }
+    #endif
     
     effct_feat_num = 0;
 
@@ -788,6 +786,7 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
 
 int main(int argc, char** argv)
 {
+    pthread_setname_np(pthread_self(), "lio_ros");
     ros::init(argc, argv, "laserMapping");
     ros::NodeHandle nh;
 
@@ -1044,14 +1043,7 @@ int main(int argc, char** argv)
                 fout_out << setw(20) << Measures.lidar_beg_time - first_lidar_time << " " << euler_cur.transpose() << " " << state_point.pos.transpose()<< " " << ext_euler.transpose() << " "<<state_point.offset_T_L_I.transpose()<<" "<< state_point.vel.transpose() \
                 <<" "<<state_point.bg.transpose()<<" "<<state_point.ba.transpose()<<" "<<state_point.grav<<" "<<feats_undistort->points.size()<<endl;
                 dump_lio_state_to_log(fp);
-            }
-
-        /********** WCET **********/
-        double frame_time = t5 - t0;
-        double old = g_wcet.load();
-        while (frame_time > old && !g_wcet.compare_exchange_weak(old, frame_time)) {}
-        /**************************/
-            
+            }            
         }
 
         status = ros::ok();
