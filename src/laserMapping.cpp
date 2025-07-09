@@ -857,6 +857,7 @@ int main(int argc, char** argv)
     p_imu->lidar_type = lidar_type;
     double epsi[23] = {0.001};
     fill(epsi, epsi+23, 0.001);
+    pthread_setname_np(pthread_self(), "lio_main");
     kf.init_dyn_share(get_f, df_dx, df_dw, h_share_model, NUM_MAX_ITERATIONS, epsi);
 
     /*** debug record ***/
