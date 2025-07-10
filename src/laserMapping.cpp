@@ -152,7 +152,7 @@ void SigHandle(int sig)
     ROS_WARN("catch sig %d", sig);   
     /********** WCET **********/
     double worst = g_wcet.load();
-    ROS_WARN("=== Worst-case execution time per frame: %.0f μs ===", worst * 1000000);
+    ROS_WARN("=== Worst-case execution time per frame: %.0f us ===", worst * 1000000);
     /**************************/
     sig_buffer.notify_all();
 }
