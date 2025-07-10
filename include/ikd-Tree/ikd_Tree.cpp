@@ -237,6 +237,7 @@ void KD_TREE<PointType>::multi_thread_rebuild()
     pthread_mutex_unlock(&termination_flag_mutex_lock);
     while (!terminated)
     {
+        auto t_loop_start = std::chrono::steady_clock::now();
         pthread_mutex_lock(&rebuild_ptr_mutex_lock);
         pthread_mutex_lock(&working_flag_mutex);
         if (Rebuild_Ptr != nullptr)
@@ -362,6 +363,12 @@ void KD_TREE<PointType>::multi_thread_rebuild()
         pthread_mutex_lock(&termination_flag_mutex_lock);
         terminated = termination_flag;
         pthread_mutex_unlock(&termination_flag_mutex_lock);
+        auto t_loop_end = std::chrono::steady_clock::now();
+        double loop_time = std::chrono::duration<double>(t_loop_end - t_loop_start).count() - 0.005; // 5 ms = 0.005 s
+        if (loop_time < 0) loop_time = 0;                       // 容错
+        double old = g_rebuild_wcet.load(std::memory_order_relaxed);
+        if (loop_time > old)
+            g_rebuild_wcet.store(loop_time, std::memory_order_relaxed);
         usleep(5000);
     }
     printf("Rebuild thread terminated normally\n");
