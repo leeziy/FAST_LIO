@@ -76,8 +76,9 @@ bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false, extri
 
 /********** WCET **********/
 #include <atomic> 
-std::atomic<double> g_wcet{0.0};
+std::atomic<double> wcet{0.0};
 std::atomic<double> omp_wcet{0.0};  
+std::atomic<double> rebuild_wcet{0.0};
 /**************************/
 
 float res_last[100000] = {0.0};
@@ -152,10 +153,12 @@ void SigHandle(int sig)
     flg_exit = true;
     ROS_WARN("catch sig %d", sig);   
     /********** WCET **********/
-    double worst = g_wcet.load();
+    double worst = wcet.load();
     double omp_worst = omp_wcet.load();
+    double rebuild_worst = rebuild_wcet.load();
     ROS_WARN("=== WCET per frame: %.0f us ===", worst * 1000000);
     ROS_WARN("=== WCET per omp: %.0f us ===", omp_worst * 1000000);
+    ROS_WARN("=== WCET per rebuild: %.0f us ===", rebuild_worst * 1000000);
     /**************************/
     sig_buffer.notify_all();
 }
@@ -1064,8 +1067,8 @@ int main(int argc, char** argv)
             }  
             /********** WCET **********/
             double frame_time = t5 - t0;           // 本帧总体耗时
-            double old = g_wcet.load();
-            while (frame_time > old && !g_wcet.compare_exchange_weak(old, frame_time)) {}
+            double old = wcet.load();
+            while (frame_time > old && !wcet.compare_exchange_weak(old, frame_time)) {}
             /**************************/
         }
 
