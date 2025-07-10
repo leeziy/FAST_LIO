@@ -156,9 +156,9 @@ void SigHandle(int sig)
     double worst = wcet.load();
     double omp_worst = omp_wcet.load();
     double rebuild_worst = rebuild_wcet.load();
-    ROS_WARN("=== WCET per frame: %.0f us ===", worst * 1000000);
-    ROS_WARN("=== WCET per omp: %.0f us ===", omp_worst * 1000000);
-    ROS_WARN("=== WCET per rebuild: %.0f us ===", rebuild_worst * 1000000);
+    ROS_WARN("=== lio WCET: %.0f us ===", worst * 1000000);
+    ROS_WARN("=== lio_omp WCET: %.0f us ===", omp_worst * 1000000);
+    ROS_WARN("=== lio_ikd WCET: %.0f us ===", rebuild_worst * 1000000);
     /**************************/
     sig_buffer.notify_all();
 }
