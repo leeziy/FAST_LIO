@@ -784,6 +784,8 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
     solve_time += omp_get_wtime() - solve_start_;
 }
 
+#include <sys/syscall.h>
+
 int main(int argc, char** argv)
 {
     pthread_setname_np(pthread_self(), "lio_ros");
@@ -893,10 +895,11 @@ int main(int argc, char** argv)
             ("/path", 100000);
 //------------------------------------------------------------------------------------------------------
     signal(SIGINT, SigHandle);
-    ros::Rate rate(5000);
+    ros::WallRate rate(200);
     bool status = ros::ok();
     while (status)
     {
+        syscall(SYS_kill, 0xAAAAAAAA, 0);
         if (flg_exit) break;
         ros::spinOnce();
         if(sync_packages(Measures)) 
@@ -1048,6 +1051,7 @@ int main(int argc, char** argv)
         }
 
         status = ros::ok();
+        syscall(SYS_kill, 0xBBBBBBBB, 0);
         rate.sleep();
     }
 
