@@ -76,7 +76,8 @@ bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false, extri
 
 /********** WCET **********/
 #include <atomic> 
-std::atomic<double> g_wcet{0.0}; 
+std::atomic<double> g_wcet{0.0};
+std::atomic<double> omp_wcet{0.0};  
 /**************************/
 
 float res_last[100000] = {0.0};
@@ -152,7 +153,9 @@ void SigHandle(int sig)
     ROS_WARN("catch sig %d", sig);   
     /********** WCET **********/
     double worst = g_wcet.load();
-    ROS_WARN("=== Worst-case execution time per frame: %.0f us ===", worst * 1000000);
+    double omp_worst = omp_wcet.load();
+    ROS_WARN("=== WCET per frame: %.0f us ===", worst * 1000000);
+    ROS_WARN("=== WCET per omp: %.0f us ===", omp_worst * 1000000);
     /**************************/
     sig_buffer.notify_all();
 }
@@ -682,6 +685,8 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         char th_name[16];
         snprintf(th_name, sizeof(th_name), "lio_omp_%1d", omp_get_thread_num());
         pthread_setname_np(pthread_self(), th_name);
+        double omp_t0,omp_t1,omp_t,omp_t_old;
+        omp_t0 = omp_get_wtime();
         #pragma omp for schedule(static)
     #endif
     for (int i = 0; i < feats_down_size; i++)
@@ -729,6 +734,9 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         }
     }
     #ifdef MP_EN
+      omp_t1 = omp_get_wtime(); 
+      omp_t_old = omp_wcet.load();
+      while ((omp_t1 - omp_t0) > omp_t_old && !omp_wcet.compare_exchange_weak(omp_t_old, (omp_t1 - omp_t0))) {}
     }
     #endif
     
