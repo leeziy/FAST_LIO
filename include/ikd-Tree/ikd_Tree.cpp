@@ -238,11 +238,13 @@ void KD_TREE<PointType>::multi_thread_rebuild()
     extern std::atomic<double> rebuild_wcet;
     while (!terminated)
     {
-        auto t_loop_start = std::chrono::steady_clock::now();
+        
         pthread_mutex_lock(&rebuild_ptr_mutex_lock);
         pthread_mutex_lock(&working_flag_mutex);
         if (Rebuild_Ptr != nullptr)
         {
+            auto t_loop_start = std::chrono::steady_clock::now();
+            bool is_full_rebuild;
             /* Traverse and copy */
             if (!Rebuild_Logger.empty())
             {
@@ -256,6 +258,7 @@ void KD_TREE<PointType>::multi_thread_rebuild()
                 alpha_bal_tmp = Root_Node->alpha_bal;
                 alpha_del_tmp = Root_Node->alpha_del;
             }
+            is_full_rebuild = (*Rebuild_Ptr == Root_Node);
             KD_TREE_NODE *old_root_node = (*Rebuild_Ptr);
             father_ptr = (*Rebuild_Ptr)->father_ptr;
             PointVector().swap(Rebuild_PCL_Storage);
@@ -355,6 +358,14 @@ void KD_TREE<PointType>::multi_thread_rebuild()
             rebuild_flag = false;
             /* Delete discarded tree nodes */
             delete_tree_nodes(&old_root_node);
+            
+            auto t_loop_end = std::chrono::steady_clock::now();
+            double loop_time = std::chrono::duration<double>(t_loop_end - t_loop_start).count();
+            if (loop_time < 0) loop_time = 0;
+            double old = rebuild_wcet.load(std::memory_order_relaxed);
+            if ((loop_time > old)&&(!is_full_rebuild))
+                rebuild_wcet.store(loop_time, std::memory_order_relaxed);
+            
         }
         else
         {
@@ -364,12 +375,7 @@ void KD_TREE<PointType>::multi_thread_rebuild()
         pthread_mutex_lock(&termination_flag_mutex_lock);
         terminated = termination_flag;
         pthread_mutex_unlock(&termination_flag_mutex_lock);
-        auto t_loop_end = std::chrono::steady_clock::now();
-        double loop_time = std::chrono::duration<double>(t_loop_end - t_loop_start).count(); // 5 ms = 0.005 s
-        if (loop_time < 0) loop_time = 0;                       // 容错
-        double old = rebuild_wcet.load(std::memory_order_relaxed);
-        if (loop_time > old)
-            rebuild_wcet.store(loop_time, std::memory_order_relaxed);
+        
         usleep(5000);
     }
     printf("Rebuild thread terminated normally\n");
