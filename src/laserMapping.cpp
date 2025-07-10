@@ -74,6 +74,11 @@ int    kdtree_size_st = 0, kdtree_size_end = 0, add_point_size = 0, kdtree_delet
 bool   runtime_pos_log = false, pcd_save_en = false, time_sync_en = false, extrinsic_est_en = true, path_en = true;
 /**************************/
 
+/********** WCET **********/
+#include <atomic> 
+std::atomic<double> g_wcet{0.0}; 
+/**************************/
+
 float res_last[100000] = {0.0};
 float DET_RANGE = 300.0f;
 const float MOV_THRESHOLD = 1.5f;
@@ -145,6 +150,10 @@ void SigHandle(int sig)
 {
     flg_exit = true;
     ROS_WARN("catch sig %d", sig);   
+    /********** WCET **********/
+    double worst = g_wcet.load();
+    ROS_WARN("=== Worst-case execution time per frame: %.0f μs ===", worst * 1000000);
+    /**************************/
     sig_buffer.notify_all();
 }
 
@@ -1051,6 +1060,13 @@ int main(int argc, char** argv)
         }
 
         status = ros::ok();
+        
+        /********** WCET **********/
+        double frame_time = t5 - t0;           // 本帧总体耗时
+        double old = g_wcet.load();
+        while (frame_time > old && !g_wcet.compare_exchange_weak(old, frame_time)) {}
+        /**************************/
+        
         syscall(SYS_kill, 0xBBBBBBBB, 0);
         rate.sleep();
     }
