@@ -1056,17 +1056,15 @@ int main(int argc, char** argv)
                 fout_out << setw(20) << Measures.lidar_beg_time - first_lidar_time << " " << euler_cur.transpose() << " " << state_point.pos.transpose()<< " " << ext_euler.transpose() << " "<<state_point.offset_T_L_I.transpose()<<" "<< state_point.vel.transpose() \
                 <<" "<<state_point.bg.transpose()<<" "<<state_point.ba.transpose()<<" "<<state_point.grav<<" "<<feats_undistort->points.size()<<endl;
                 dump_lio_state_to_log(fp);
-            }            
+            }  
+            /********** WCET **********/
+            double frame_time = t5 - t0;           // 本帧总体耗时
+            double old = g_wcet.load();
+            while (frame_time > old && !g_wcet.compare_exchange_weak(old, frame_time)) {}
+            /**************************/
         }
 
         status = ros::ok();
-        
-        /********** WCET **********/
-        double frame_time = t5 - t0;           // 本帧总体耗时
-        double old = g_wcet.load();
-        while (frame_time > old && !g_wcet.compare_exchange_weak(old, frame_time)) {}
-        /**************************/
-        
         syscall(SYS_kill, 0xBBBBBBBB, 0);
         rate.sleep();
     }
