@@ -235,6 +235,7 @@ void KD_TREE<PointType>::multi_thread_rebuild()
     pthread_mutex_lock(&termination_flag_mutex_lock);
     terminated = termination_flag;
     pthread_mutex_unlock(&termination_flag_mutex_lock);
+    extern std::atomic<double> rebuild_wcet;
     while (!terminated)
     {
         auto t_loop_start = std::chrono::steady_clock::now();
