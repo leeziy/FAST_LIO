@@ -1,4 +1,5 @@
 #include "ikd_Tree.h"
+#include <ros/ros.h>
 
 /*
 Description: ikd-Tree: an incremental k-d tree for robotic applications 
@@ -236,6 +237,7 @@ void KD_TREE<PointType>::multi_thread_rebuild()
     terminated = termination_flag;
     pthread_mutex_unlock(&termination_flag_mutex_lock);
     extern std::atomic<double> rebuild_wcet;
+    ros::WallRate rate(200);
     while (!terminated)
     {
         
@@ -376,7 +378,8 @@ void KD_TREE<PointType>::multi_thread_rebuild()
         terminated = termination_flag;
         pthread_mutex_unlock(&termination_flag_mutex_lock);
         
-        usleep(5000);
+        // usleep(5000);
+        rate.sleep();
     }
     printf("Rebuild thread terminated normally\n");
 }
