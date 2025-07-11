@@ -150,6 +150,16 @@ shared_ptr<ImuProcess> p_imu(new ImuProcess());
 
 void SigHandle(int sig)
 {
+    if (sig == SIGUSR1)
+    {
+        wcet.store(0.0);
+        omp_wcet.store(0.0);
+        rebuild_wcet.store(0.0);
+        ROS_WARN("Received SIGUSR1: WCET records cleared!");
+        return;
+    }
+    if (sig == SIGINT)
+    {
     flg_exit = true;
     ROS_WARN("catch sig %d", sig);   
     /********** WCET **********/
@@ -161,6 +171,7 @@ void SigHandle(int sig)
     ROS_WARN("=== lio_ikd WCET: %.0f us ===", rebuild_worst * 1000000);
     /**************************/
     sig_buffer.notify_all();
+    }
 }
 
 inline void dump_lio_state_to_log(FILE *fp)  
@@ -913,6 +924,7 @@ int main(int argc, char** argv)
             ("/path", 100000);
 //------------------------------------------------------------------------------------------------------
     signal(SIGINT, SigHandle);
+    signal(SIGUSR1, SigHandle);
     ros::WallRate rate(200);
     bool status = ros::ok();
     while (status)
