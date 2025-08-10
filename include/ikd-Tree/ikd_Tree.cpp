@@ -1,5 +1,8 @@
 #include "ikd_Tree.h"
 #include <ros/ros.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <stdint.h>
 
 /*
 Description: ikd-Tree: an incremental k-d tree for robotic applications 
