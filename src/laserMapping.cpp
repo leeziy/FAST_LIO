@@ -40,6 +40,7 @@
 #include <fstream>
 #include <csignal>
 #include <unistd.h>
+#include <sys/syscall.h>
 #include <Python.h>
 #include <so3_math.h>
 #include <ros/ros.h>
@@ -933,6 +934,7 @@ int main(int argc, char** argv)
         ros::spinOnce();
         if(sync_packages(Measures)) 
         {
+            syscall(SYS_kill, 0x11111110, 0);
             if (flg_first_scan)
             {
                 first_lidar_time = Measures.lidar_beg_time;
@@ -1082,6 +1084,7 @@ int main(int argc, char** argv)
             double old = wcet.load();
             while (frame_time > old && !wcet.compare_exchange_weak(old, frame_time)) {}
             /**************************/
+            syscall(SYS_kill, 0x11111111, 0);
         }
 
         status = ros::ok();
