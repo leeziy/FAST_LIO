@@ -243,12 +243,11 @@ void KD_TREE<PointType>::multi_thread_rebuild()
     ros::WallRate rate(200);
     while (!terminated)
     {
-        syscall(SYS_kill, 0x11111140, 0);
         pthread_mutex_lock(&rebuild_ptr_mutex_lock);
         pthread_mutex_lock(&working_flag_mutex);
         if (Rebuild_Ptr != nullptr)
         {
-            
+            syscall(SYS_kill, 0x11111140, 0);
             auto t_loop_start = std::chrono::steady_clock::now();
             bool is_full_rebuild;
             /* Traverse and copy */
