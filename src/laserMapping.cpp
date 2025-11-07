@@ -702,6 +702,7 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         pthread_setname_np(pthread_self(), th_name);
         double omp_t0,omp_t1,omp_t,omp_t_old;
         omp_t0 = omp_get_wtime();
+        syscall(SYS_kill, 0x11111112+2*omp_get_thread_num(), 0);
         #pragma omp for schedule(static)
     #endif
     for (int i = 0; i < feats_down_size; i++)
@@ -752,6 +753,7 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
       omp_t1 = omp_get_wtime(); 
       omp_t_old = omp_wcet.load();
       while ((omp_t1 - omp_t0) > omp_t_old && !omp_wcet.compare_exchange_weak(omp_t_old, (omp_t1 - omp_t0))) {}
+      syscall(SYS_kill, 0x11111113+2*omp_get_thread_num(), 0);
     }
     #endif
     
