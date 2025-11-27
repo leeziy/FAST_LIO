@@ -44,6 +44,7 @@
 #include <Python.h>
 #include <so3_math.h>
 #include <ros/ros.h>
+#include <ros/callback_queue.h>
 #include <Eigen/Core>
 #include "IMU_Processing.hpp"
 #include <nav_msgs/Odometry.h>
@@ -317,6 +318,8 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
 
     PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
     p_pre->process(msg, ptr);
+    lidar_buffer.clear();
+    time_buffer.clear();
     lidar_buffer.push_back(ptr);
     time_buffer.push_back(msg->header.stamp.toSec());
     last_timestamp_lidar = msg->header.stamp.toSec();
@@ -353,6 +356,8 @@ void livox_pcl_cbk(const livox_ros_driver2::CustomMsg::ConstPtr &msg)
 
     PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
     p_pre->process(msg, ptr);
+    lidar_buffer.clear();
+    time_buffer.clear();
     lidar_buffer.push_back(ptr);
     time_buffer.push_back(last_timestamp_lidar);
     
@@ -891,7 +896,6 @@ int main(int argc, char** argv)
     p_imu->lidar_type = lidar_type;
     double epsi[23] = {0.001};
     fill(epsi, epsi+23, 0.001);
-    pthread_setname_np(pthread_self(), "lio_main");
     kf.init_dyn_share(get_f, df_dx, df_dw, h_share_model, NUM_MAX_ITERATIONS, epsi);
 
     /*** debug record ***/
@@ -909,10 +913,29 @@ int main(int argc, char** argv)
         cout << "~~~~"<<ROOT_DIR<<" doesn't exist" << endl;
 
     /*** ROS subscribe initialization ***/
+    // ros::CallbackQueue sensor_cbk_queue_;
+    // unique_ptr<ros::NodeHandle> sensor_cbk_nh_;
+    // unique_ptr<ros::AsyncSpinner> sensor_cbk_spinner_;
+    
+    // sensor_cbk_nh_.reset(new ros::NodeHandle(nh));
+    // sensor_cbk_nh_->setCallbackQueue(&sensor_cbk_queue_);
+    // sensor_cbk_spinner_ = std::make_unique<ros::AsyncSpinner>(2, &sensor_cbk_queue_);
+
+    // ros::Subscriber sub_pcl = p_pre->lidar_type == AVIA ? \
+    //     sensor_cbk_nh_->subscribe(lid_topic, 200000, livox_pcl_cbk) : \
+    //     sensor_cbk_nh_->subscribe(lid_topic, 200000, standard_pcl_cbk);
+    // ros::Subscriber sub_imu = sensor_cbk_nh_->subscribe(imu_topic, 200000, imu_cbk);
+
+    ros::CallbackQueue sensor_cbk_queue_;
+    ros::NodeHandle sensor_cbk_nh_(nh);
+    sensor_cbk_nh_.setCallbackQueue(&sensor_cbk_queue_);
+    ros::AsyncSpinner sensor_cbk_spinner_(2, &sensor_cbk_queue_);
+
     ros::Subscriber sub_pcl = p_pre->lidar_type == AVIA ? \
-        nh.subscribe(lid_topic, 200000, livox_pcl_cbk) : \
-        nh.subscribe(lid_topic, 200000, standard_pcl_cbk);
-    ros::Subscriber sub_imu = nh.subscribe(imu_topic, 200000, imu_cbk);
+        sensor_cbk_nh_.subscribe(lid_topic, 1, livox_pcl_cbk) : \
+        sensor_cbk_nh_.subscribe(lid_topic, 1, standard_pcl_cbk);
+    ros::Subscriber sub_imu = sensor_cbk_nh_.subscribe(imu_topic, 200000, imu_cbk);
+
     ros::Publisher pubLaserCloudFull = nh.advertise<sensor_msgs::PointCloud2>
             ("/cloud_registered", 100000);
     ros::Publisher pubLaserCloudFull_body = nh.advertise<sensor_msgs::PointCloud2>
@@ -925,15 +948,24 @@ int main(int argc, char** argv)
             ("/Odometry", 100000);
     ros::Publisher pubPath          = nh.advertise<nav_msgs::Path> 
             ("/path", 100000);
+
+
 //------------------------------------------------------------------------------------------------------
     signal(SIGINT, SigHandle);
     signal(SIGUSR1, SigHandle);
     ros::WallRate rate(200);
     bool status = ros::ok();
+    pthread_setname_np(pthread_self(), "lio_cbk");
+    sensor_cbk_spinner_.start();
+
     while (status)
     {
-        if (flg_exit) break;
-        ros::spinOnce();
+        if (flg_exit) 
+        {
+            sensor_cbk_spinner_.stop();
+            break;
+        }
+        // ros::spinOnce();
         if(sync_packages(Measures)) 
         {
             syscall(SYS_kill, 0x11111110, 0);
