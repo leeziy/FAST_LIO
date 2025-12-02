@@ -45,6 +45,7 @@
 #include <so3_math.h>
 #include <ros/ros.h>
 #include <ros/callback_queue.h>
+#include <ros/topic.h>
 #include <Eigen/Core>
 #include "IMU_Processing.hpp"
 #include <nav_msgs/Odometry.h>
@@ -930,17 +931,71 @@ int main(int argc, char** argv)
     ros::Publisher pubPath          = nh.advertise<nav_msgs::Path> 
             ("/path", 100000);
 
-    ros::CallbackQueue sensor_cbk_queue_;
-    ros::NodeHandle sensor_cbk_nh_(nh);
-    sensor_cbk_nh_.setCallbackQueue(&sensor_cbk_queue_);
-    ros::AsyncSpinner sensor_cbk_spinner_(2, &sensor_cbk_queue_);
+    /*lio_lidar手动触发*/
+    ros::CallbackQueue lio_lidar_queue_;
+    ros::NodeHandle lio_lidar_nh_(nh);
+    lio_lidar_nh_.setCallbackQueue(&lio_lidar_queue_);
+    ros::AsyncSpinner lio_lidar_spinner_(1, &lio_lidar_queue_);
+    auto lio_lidar_cbk = [&](const std_msgs::Empty::ConstPtr&)
+    {
+        auto msg = ros::topic::waitForMessage<sensor_msgs::PointCloud2>(lid_topic, lio_lidar_nh_, ros::Duration(0.005));
+        mtx_buffer.lock();
+        scan_count ++;
+        if (msg->header.stamp.toSec() < last_timestamp_lidar)
+        {
+            ROS_ERROR("lidar loop back, clear buffer");
+            lidar_buffer.clear();
+        }
 
-    ros::Subscriber sub_pcl = p_pre->lidar_type == AVIA ? \
-        sensor_cbk_nh_.subscribe(lid_topic, 1, livox_pcl_cbk) : \
-        sensor_cbk_nh_.subscribe(lid_topic, 1, standard_pcl_cbk);
-    ros::Subscriber sub_imu = sensor_cbk_nh_.subscribe(imu_topic, 1, imu_cbk);
+        PointCloudXYZI::Ptr  ptr(new PointCloudXYZI());
+        p_pre->process(msg, ptr);
+        lidar_buffer.clear();
+        time_buffer.clear();
+        lidar_buffer.push_back(ptr);
+        time_buffer.push_back(msg->header.stamp.toSec());
+        last_timestamp_lidar = msg->header.stamp.toSec();
+        mtx_buffer.unlock();
+    };
+    ros::Subscriber lio_lidar_trigger = lio_lidar_nh_.subscribe<std_msgs::Empty>("/lio_lidar_trigger", 1, lio_lidar_cbk);
 
-    auto mapping_cbk = [&](const std_msgs::Empty::ConstPtr&)
+    /*lio_imu手动触发*/
+    ros::CallbackQueue lio_imu_queue_;
+    ros::NodeHandle lio_imu_nh_(nh);
+    lio_imu_nh_.setCallbackQueue(&lio_imu_queue_);
+    ros::AsyncSpinner lio_imu_spinner_(1, &lio_imu_queue_);
+    auto lio_imu_cbk = [&](const std_msgs::Empty::ConstPtr&)
+    {
+        auto msg_in = ros::topic::waitForMessage<sensor_msgs::Imu>(imu_topic, lio_imu_nh_, ros::Duration(0.005));
+        publish_count ++;
+        // cout<<"IMU got at: "<<msg_in->header.stamp.toSec()<<endl;
+        sensor_msgs::Imu::Ptr msg(new sensor_msgs::Imu(*msg_in));
+
+        msg->header.stamp = ros::Time().fromSec(msg_in->header.stamp.toSec() - time_diff_lidar_to_imu);
+        if (abs(timediff_lidar_wrt_imu) > 0.1 && time_sync_en)
+        {
+            msg->header.stamp = \
+            ros::Time().fromSec(timediff_lidar_wrt_imu + msg_in->header.stamp.toSec());
+        }
+
+        double timestamp = msg->header.stamp.toSec();
+
+        mtx_buffer.lock();
+
+        if (timestamp < last_timestamp_imu)
+        {
+            ROS_WARN("imu loop back, clear buffer");
+            imu_buffer.clear();
+        }
+
+        last_timestamp_imu = timestamp;
+
+        imu_buffer.push_back(msg);
+        mtx_buffer.unlock();
+    };
+    ros::Subscriber lio_imu_trigger = lio_imu_nh_.subscribe<std_msgs::Empty>("/lio_imu_trigger", 1, lio_imu_cbk);
+
+    /*lio_odometry手动触发*/
+    auto lio_odom_cbk = [&](const std_msgs::Empty::ConstPtr&)
     // auto mapping_cbk = [&](const ros::TimerEvent&)
     {
         // if (flg_exit)
@@ -1106,13 +1161,13 @@ int main(int argc, char** argv)
         syscall(SYS_kill, 0x11111111, 0);
     };
 
-    ros::CallbackQueue mapping_cbk_queue_;
-    ros::NodeHandle mapping_cbk_nh_(nh);
-    mapping_cbk_nh_.setCallbackQueue(&mapping_cbk_queue_);
-    ros::AsyncSpinner mapping_cbk_spinner_(1, &mapping_cbk_queue_);
+    ros::CallbackQueue lio_odom_queue_;
+    ros::NodeHandle lio_odom_nh_(nh);
+    lio_odom_nh_.setCallbackQueue(&lio_odom_queue_);
+    ros::AsyncSpinner lio_odom_spinner_(1, &lio_odom_queue_);
     // ros::Timer mapping_timer = mapping_cbk_nh_.createTimer(ros::Duration(0.02), mapping_cbk);
-    ros::Subscriber mapping_cbk_trigger = mapping_cbk_nh_.subscribe<std_msgs::Empty>("/mapping_cbk_trigger", 1, mapping_cbk);
-    // rostopic pub -r 20 /mapping_cbk_trigger std_msgs/Empty "{}"
+    ros::Subscriber lio_odom_trigger = lio_odom_nh_.subscribe<std_msgs::Empty>("/lio_odom_trigger", 1, lio_odom_cbk);
+    // rostopic pub -r 20 /lio_odom_cbk_trigger std_msgs/Empty "{}"
 
 
 //------------------------------------------------------------------------------------------------------
@@ -1120,15 +1175,18 @@ int main(int argc, char** argv)
     // signal(SIGUSR1, SigHandle);
     // ros::WallRate rate(200);
     // bool status = ros::ok();
-    pthread_setname_np(pthread_self(), "lio_sensor");
-    sensor_cbk_spinner_.start();
-    pthread_setname_np(pthread_self(), "lio_mapping");
-    mapping_cbk_spinner_.start();
+    pthread_setname_np(pthread_self(), "lio_lidar");
+    lio_lidar_spinner_.start();
+    pthread_setname_np(pthread_self(), "lio_imu");
+    lio_imu_spinner_.start();
+    pthread_setname_np(pthread_self(), "lio_odom");
+    lio_odom_spinner_.start();
 
     ros::waitForShutdown();
 
-    mapping_cbk_spinner_.stop();
-    sensor_cbk_spinner_.stop();
+    lio_lidar_spinner_.stop();
+    lio_imu_spinner_.stop();
+    lio_odom_spinner_.stop();
 
     // while (status)
     // {
