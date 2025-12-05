@@ -919,17 +919,17 @@ int main(int argc, char** argv)
     /*** ROS subscribe initialization ***/
 
     ros::Publisher pubLaserCloudFull = nh.advertise<sensor_msgs::PointCloud2>
-            ("/cloud_registered", 100000);
+            ("/cloud_registered", 100000, true);
     ros::Publisher pubLaserCloudFull_body = nh.advertise<sensor_msgs::PointCloud2>
-            ("/cloud_registered_body", 100000);
+            ("/cloud_registered_body", 100000, true);
     ros::Publisher pubLaserCloudEffect = nh.advertise<sensor_msgs::PointCloud2>
-            ("/cloud_effected", 100000);
+            ("/cloud_effected", 100000, true);
     ros::Publisher pubLaserCloudMap = nh.advertise<sensor_msgs::PointCloud2>
-            ("/Laser_map", 100000);
+            ("/Laser_map", 100000, true);
     ros::Publisher pubOdomAftMapped = nh.advertise<nav_msgs::Odometry> 
-            ("/Odometry", 100000);
+            ("/Odometry", 100000, true);
     ros::Publisher pubPath          = nh.advertise<nav_msgs::Path> 
-            ("/path", 100000);
+            ("/path", 100000, true);
 
     /*lio_lidar手动触发*/
     ros::CallbackQueue lio_lidar_queue_;
