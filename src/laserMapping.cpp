@@ -939,7 +939,13 @@ int main(int argc, char** argv)
     auto lio_lidar_cbk = [&](const std_msgs::Empty::ConstPtr&)
     {
         auto msg = ros::topic::waitForMessage<sensor_msgs::PointCloud2>(lid_topic, lio_lidar_nh_, ros::Duration(0.005));
-        mtx_buffer.lock();
+        if (!msg)
+        {
+            ROS_WARN_THROTTLE(1.0, "lio_lidar_trigger: waitForMessage timeout on %s", lid_topic.c_str());
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(mtx_buffer);
         scan_count ++;
         if (msg->header.stamp.toSec() < last_timestamp_lidar)
         {
@@ -954,7 +960,6 @@ int main(int argc, char** argv)
         lidar_buffer.push_back(ptr);
         time_buffer.push_back(msg->header.stamp.toSec());
         last_timestamp_lidar = msg->header.stamp.toSec();
-        mtx_buffer.unlock();
     };
     ros::Subscriber lio_lidar_trigger = lio_lidar_nh_.subscribe<std_msgs::Empty>("/lio_lidar_trigger", 1, lio_lidar_cbk);
 
@@ -966,6 +971,12 @@ int main(int argc, char** argv)
     auto lio_imu_cbk = [&](const std_msgs::Empty::ConstPtr&)
     {
         auto msg_in = ros::topic::waitForMessage<sensor_msgs::Imu>(imu_topic, lio_imu_nh_, ros::Duration(0.005));
+        if (!msg_in)
+        {
+            ROS_WARN_THROTTLE(1.0, "lio_imu_trigger: waitForMessage timeout on %s", imu_topic.c_str());
+            return;
+        }
+
         publish_count ++;
         // cout<<"IMU got at: "<<msg_in->header.stamp.toSec()<<endl;
         sensor_msgs::Imu::Ptr msg(new sensor_msgs::Imu(*msg_in));
@@ -979,7 +990,7 @@ int main(int argc, char** argv)
 
         double timestamp = msg->header.stamp.toSec();
 
-        mtx_buffer.lock();
+        std::lock_guard<std::mutex> lock(mtx_buffer);
 
         if (timestamp < last_timestamp_imu)
         {
@@ -990,7 +1001,6 @@ int main(int argc, char** argv)
         last_timestamp_imu = timestamp;
 
         imu_buffer.push_back(msg);
-        mtx_buffer.unlock();
     };
     ros::Subscriber lio_imu_trigger = lio_imu_nh_.subscribe<std_msgs::Empty>("/lio_imu_trigger", 1, lio_imu_cbk);
 
