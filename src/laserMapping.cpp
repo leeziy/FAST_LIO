@@ -935,7 +935,7 @@ int main(int argc, char** argv)
     ros::CallbackQueue lio_lidar_queue_;
     ros::NodeHandle lio_lidar_nh_(nh);
     lio_lidar_nh_.setCallbackQueue(&lio_lidar_queue_);
-    ros::AsyncSpinner lio_lidar_spinner_(1, &lio_lidar_queue_);
+    ros::AsyncSpinner lio_lidar_spinner_(2, &lio_lidar_queue_);
     auto lio_lidar_cbk = [&](const std_msgs::Empty::ConstPtr&)
     {
         auto msg = ros::topic::waitForMessage<sensor_msgs::PointCloud2>("/livox/lidar", lio_lidar_nh_, ros::Duration(0.005));
@@ -967,7 +967,7 @@ int main(int argc, char** argv)
     ros::CallbackQueue lio_imu_queue_;
     ros::NodeHandle lio_imu_nh_(nh);
     lio_imu_nh_.setCallbackQueue(&lio_imu_queue_);
-    ros::AsyncSpinner lio_imu_spinner_(1, &lio_imu_queue_);
+    ros::AsyncSpinner lio_imu_spinner_(2, &lio_imu_queue_);
     auto lio_imu_cbk = [&](const std_msgs::Empty::ConstPtr&)
     {
         auto msg_in = ros::topic::waitForMessage<sensor_msgs::Imu>("/livox/imu", lio_imu_nh_, ros::Duration(0.005));
@@ -1174,7 +1174,7 @@ int main(int argc, char** argv)
     ros::CallbackQueue lio_odom_queue_;
     ros::NodeHandle lio_odom_nh_(nh);
     lio_odom_nh_.setCallbackQueue(&lio_odom_queue_);
-    ros::AsyncSpinner lio_odom_spinner_(1, &lio_odom_queue_);
+    ros::AsyncSpinner lio_odom_spinner_(2, &lio_odom_queue_);
     // ros::Timer mapping_timer = mapping_cbk_nh_.createTimer(ros::Duration(0.02), mapping_cbk);
     ros::Subscriber lio_odom_trigger = lio_odom_nh_.subscribe<std_msgs::Empty>("/lio_odom_trigger", 1, lio_odom_cbk);
     // rostopic pub -r 20 /lio_odom_cbk_trigger std_msgs/Empty "{}"
