@@ -938,10 +938,10 @@ int main(int argc, char** argv)
     ros::AsyncSpinner lio_lidar_spinner_(1, &lio_lidar_queue_);
     auto lio_lidar_cbk = [&](const std_msgs::Empty::ConstPtr&)
     {
-        auto msg = ros::topic::waitForMessage<sensor_msgs::PointCloud2>(lid_topic, lio_lidar_nh_, ros::Duration(0.005));
+        auto msg = ros::topic::waitForMessage<sensor_msgs::PointCloud2>("/livox/lidar", lio_lidar_nh_, ros::Duration(0.005));
         if (!msg)
         {
-            ROS_WARN_THROTTLE(1.0, "lio_lidar_trigger: waitForMessage timeout on %s", lid_topic.c_str());
+            ROS_WARN_THROTTLE(1.0, "lio_lidar_trigger: waitForMessage timeout on /livox/lidar");
             return;
         }
 
@@ -970,10 +970,10 @@ int main(int argc, char** argv)
     ros::AsyncSpinner lio_imu_spinner_(1, &lio_imu_queue_);
     auto lio_imu_cbk = [&](const std_msgs::Empty::ConstPtr&)
     {
-        auto msg_in = ros::topic::waitForMessage<sensor_msgs::Imu>(imu_topic, lio_imu_nh_, ros::Duration(0.005));
+        auto msg_in = ros::topic::waitForMessage<sensor_msgs::Imu>("/livox/imu", lio_imu_nh_, ros::Duration(0.005));
         if (!msg_in)
         {
-            ROS_WARN_THROTTLE(1.0, "lio_imu_trigger: waitForMessage timeout on %s", imu_topic.c_str());
+            ROS_WARN_THROTTLE(1.0, "lio_imu_trigger: waitForMessage timeout on /livox/imu");
             return;
         }
 
