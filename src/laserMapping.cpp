@@ -318,14 +318,18 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
 
 void lio_lidar_cbk(const std_msgs::Empty::ConstPtr &) 
 {
+    syscall(SYS_kill, 0x11111100, 0);
     sensor_msgs::PointCloud2::ConstPtr msg;
     {
         std::lock_guard<std::mutex> lock(mtx_buffer);
         msg.swap(standard_lidar_latest);
     }
 
-    if (!msg) return;
-
+    if (!msg)
+    {
+        syscall(SYS_kill, 0x11111101, 0);
+        return;
+    }
     mtx_buffer.lock();
     scan_count ++;
     double preprocess_start_time = omp_get_wtime();
@@ -345,6 +349,7 @@ void lio_lidar_cbk(const std_msgs::Empty::ConstPtr &)
     s_plot11[scan_count] = omp_get_wtime() - preprocess_start_time;
     mtx_buffer.unlock();
     sig_buffer.notify_all();
+    syscall(SYS_kill, 0x11111101, 0);
 }
 
 double timediff_lidar_wrt_imu = 0.0;
@@ -394,6 +399,7 @@ void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
 
 void lio_imu_cbk(const std_msgs::Empty::ConstPtr &) 
 {
+    syscall(SYS_kill, 0x11111110, 0);
     deque<sensor_msgs::Imu::ConstPtr> pending_imus;
     {
         std::lock_guard<std::mutex> lock(mtx_buffer);
@@ -429,6 +435,7 @@ void lio_imu_cbk(const std_msgs::Empty::ConstPtr &)
         mtx_buffer.unlock();
         sig_buffer.notify_all();
     }
+    syscall(SYS_kill, 0x11111111, 0);
 }
 
 double lidar_mean_scantime = 0.0;
@@ -984,6 +991,7 @@ int main(int argc, char** argv)
     auto lio_odom_cbk = [&](const std_msgs::Empty::ConstPtr&)
     // auto mapping_cbk = [&](const ros::TimerEvent&)
     {
+        syscall(SYS_kill, 0x11111120, 0);
         // if (flg_exit)
         // {
         //     return;
@@ -991,15 +999,16 @@ int main(int argc, char** argv)
 
         if (!sync_packages(Measures))
         {
+            syscall(SYS_kill, 0x11111121, 0);
             return;
         }
 
-        syscall(SYS_kill, 0x11111110, 0);
         if (flg_first_scan)
         {
             first_lidar_time = Measures.lidar_beg_time;
             p_imu->first_lidar_time = first_lidar_time;
             flg_first_scan = false;
+            syscall(SYS_kill, 0x11111121, 0);
             return;
         }
 
@@ -1019,6 +1028,7 @@ int main(int argc, char** argv)
         if (feats_undistort->empty() || (feats_undistort == NULL))
         {
             ROS_WARN("No point, skip this scan!\n");
+            syscall(SYS_kill, 0x11111121, 0);
             return;
         }
 
@@ -1045,6 +1055,7 @@ int main(int argc, char** argv)
                 }
                 ikdtree.Build(feats_down_world->points);
             }
+            syscall(SYS_kill, 0x11111121, 0);
             return;
         }
         int featsFromMapNum = ikdtree.validnum();
@@ -1056,6 +1067,7 @@ int main(int argc, char** argv)
         if (feats_down_size < 5)
         {
             ROS_WARN("No point, skip this scan!\n");
+            syscall(SYS_kill, 0x11111121, 0);
             return;
         }
         
@@ -1144,7 +1156,7 @@ int main(int argc, char** argv)
         double old = wcet.load();
         while (frame_time > old && !wcet.compare_exchange_weak(old, frame_time)) {}
         /**************************/
-        syscall(SYS_kill, 0x11111111, 0);
+        syscall(SYS_kill, 0x11111121, 0);
     };
 
     ros::CallbackQueue lio_odom_queue_;
