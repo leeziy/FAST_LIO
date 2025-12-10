@@ -442,8 +442,10 @@ double lidar_mean_scantime = 0.0;
 int    scan_num = 0;
 bool sync_packages(MeasureGroup &meas)
 {
+    mtx_buffer.lock();
     if (lidar_buffer.empty() || imu_buffer.empty()) {
         ROS_WARN("Empty buffer!\n");
+        mtx_buffer.unlock();
         return false;
     }
 
@@ -497,6 +499,7 @@ bool sync_packages(MeasureGroup &meas)
     lidar_buffer.pop_front();
     time_buffer.pop_front();
     lidar_pushed = false;
+    mtx_buffer.unlock();
     return true;
 }
 
