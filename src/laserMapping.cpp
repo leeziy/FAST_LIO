@@ -482,7 +482,8 @@ bool sync_packages(MeasureGroup &meas)
     if (last_timestamp_imu < lidar_end_time)
     {
         ROS_WARN("Time sync failed! Delay: %.0f ms\n", (lidar_end_time-last_timestamp_imu)*1000);
-        // return false;
+        mtx_buffer.unlock();
+        return false;
     }
 
     /*** push imu data, and pop from imu buffer ***/
