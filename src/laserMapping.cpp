@@ -118,6 +118,7 @@ deque<PointCloudXYZI::Ptr>        lidar_buffer;
 deque<sensor_msgs::Imu::ConstPtr> imu_buffer;
 deque<sensor_msgs::Imu::ConstPtr> imu_raw_buffer;
 sensor_msgs::PointCloud2::ConstPtr standard_lidar_latest;
+livox_ros_driver2::CustomMsg::ConstPtr livox_lidar_latest;
 
 PointCloudXYZI::Ptr featsFromMap(new PointCloudXYZI());
 PointCloudXYZI::Ptr feats_undistort(new PointCloudXYZI());
@@ -309,14 +310,14 @@ void lasermap_fov_segment()
     kdtree_delete_time = omp_get_wtime() - delete_begin;
 }
 
-/* 订阅时只保留最新点云，处理由lio_lidar_cbk触发 */
+/* 订阅时只保留最新点云，处理由lio_standard_lidar_cbk触发 */
 void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg) 
 {
     std::lock_guard<std::mutex> lock(mtx_buffer);
     standard_lidar_latest = msg;
 }
 
-void lio_lidar_cbk(const std_msgs::Empty::ConstPtr &) 
+void lio_standard_lidar_cbk(const std_msgs::Empty::ConstPtr &) 
 {
     syscall(SYS_kill, 0x11111100, 0);
     sensor_msgs::PointCloud2::ConstPtr msg;
@@ -354,9 +355,23 @@ void lio_lidar_cbk(const std_msgs::Empty::ConstPtr &)
 
 double timediff_lidar_wrt_imu = 0.0;
 bool   timediff_set_flg = false;
+/* 订阅时只保留最新点云，处理由lio_livox_lidar_cbk触发 */
 void livox_pcl_cbk(const livox_ros_driver2::CustomMsg::ConstPtr &msg) 
 {
+    std::lock_guard<std::mutex> lock(mtx_buffer);
+    livox_lidar_latest = msg;
+}
+
+void lio_livox_lidar_cbk(const std_msgs::Empty::ConstPtr &) 
+{
+    livox_ros_driver2::CustomMsg::ConstPtr msg;
     mtx_buffer.lock();
+    msg.swap(livox_lidar_latest);
+    if (!msg)
+    {
+        mtx_buffer.unlock();
+        return;
+    }
     double preprocess_start_time = omp_get_wtime();
     scan_count ++;
     if (msg->header.stamp.toSec() < last_timestamp_lidar)
@@ -980,8 +995,18 @@ int main(int argc, char** argv)
     ros::NodeHandle lio_lidar_nh_(nh);
     lio_lidar_nh_.setCallbackQueue(&lio_lidar_queue_);
     ros::AsyncSpinner lio_lidar_spinner_(1, &lio_lidar_queue_);
-    ros::Subscriber subLidar = nh.subscribe<sensor_msgs::PointCloud2>(lid_topic, 100000, standard_pcl_cbk);
-    ros::Subscriber lio_lidar_trigger = lio_lidar_nh_.subscribe<std_msgs::Empty>("/lio_lidar_trigger", 1, lio_lidar_cbk);
+    ros::Subscriber subLidar;
+    ros::Subscriber lio_lidar_trigger;
+    if (lidar_type == AVIA)
+    {
+        subLidar = nh.subscribe<livox_ros_driver2::CustomMsg>(lid_topic, 100000, livox_pcl_cbk);
+        lio_lidar_trigger = lio_lidar_nh_.subscribe<std_msgs::Empty>("/lio_lidar_trigger", 1, lio_livox_lidar_cbk);
+    }
+    else
+    {
+        subLidar = nh.subscribe<sensor_msgs::PointCloud2>(lid_topic, 100000, standard_pcl_cbk);
+        lio_lidar_trigger = lio_lidar_nh_.subscribe<std_msgs::Empty>("/lio_lidar_trigger", 1, lio_standard_lidar_cbk);
+    }
 
     /*lio_imu手动触发*/
     ros::CallbackQueue lio_imu_queue_;
