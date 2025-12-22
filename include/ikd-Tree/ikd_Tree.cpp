@@ -247,7 +247,6 @@ void KD_TREE<PointType>::multi_thread_rebuild()
         pthread_mutex_lock(&working_flag_mutex);
         if (Rebuild_Ptr != nullptr)
         {
-            syscall(SYS_kill, 0x11111140, 0);
             auto t_loop_start = std::chrono::steady_clock::now();
             bool is_full_rebuild;
             /* Traverse and copy */
@@ -370,7 +369,6 @@ void KD_TREE<PointType>::multi_thread_rebuild()
             double old = rebuild_wcet.load(std::memory_order_relaxed);
             if ((loop_time > old)&&(!is_full_rebuild))
                 rebuild_wcet.store(loop_time, std::memory_order_relaxed);
-            syscall(SYS_kill, 0x11111141, 0);
         }
         else
         {

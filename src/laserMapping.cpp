@@ -364,12 +364,14 @@ void livox_pcl_cbk(const livox_ros_driver2::CustomMsg::ConstPtr &msg)
 
 void lio_livox_lidar_cbk(const std_msgs::Empty::ConstPtr &) 
 {
+    syscall(SYS_kill, 0x11111100, 0);
     livox_ros_driver2::CustomMsg::ConstPtr msg;
     mtx_buffer.lock();
     msg.swap(livox_lidar_latest);
     if (!msg)
     {
         mtx_buffer.unlock();
+        syscall(SYS_kill, 0x11111101, 0);
         return;
     }
     double preprocess_start_time = omp_get_wtime();
@@ -403,6 +405,7 @@ void lio_livox_lidar_cbk(const std_msgs::Empty::ConstPtr &)
     s_plot11[scan_count] = omp_get_wtime() - preprocess_start_time;
     mtx_buffer.unlock();
     sig_buffer.notify_all();
+    syscall(SYS_kill, 0x11111101, 0);
 }
 
 /* 仅缓存IMU原始数据，实际处理由lio_imu_cbk触发 */
