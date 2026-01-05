@@ -462,7 +462,7 @@ bool sync_packages(MeasureGroup &meas)
 {
     mtx_buffer.lock();
     if (lidar_buffer.empty() || imu_buffer.empty()) {
-        ROS_WARN("Empty buffer!\n");
+        // ROS_WARN("Empty buffer!\n");
         mtx_buffer.unlock();
         return false;
     }
@@ -477,7 +477,7 @@ bool sync_packages(MeasureGroup &meas)
         if (meas.lidar->points.size() <= 1) // time too little
         {
             lidar_end_time = meas.lidar_beg_time + lidar_mean_scantime;
-            ROS_WARN("Too few input point cloud!\n");
+            // ROS_WARN("Too few input point cloud!\n");
         }
         else if (meas.lidar->points.back().curvature / double(1000) < 0.5 * lidar_mean_scantime)
         {
@@ -499,7 +499,7 @@ bool sync_packages(MeasureGroup &meas)
 
     if (last_timestamp_imu < lidar_end_time)
     {
-        ROS_WARN("Time sync failed! Delay: %.0f ms\n", (lidar_end_time-last_timestamp_imu)*1000);
+        // ROS_WARN("Time sync failed! Delay: %.0f ms\n", (lidar_end_time-last_timestamp_imu)*1000);
         mtx_buffer.unlock();
         return false;
     }
@@ -844,7 +844,7 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
     if (effct_feat_num < 1)
     {
         ekfom_data.valid = false;
-        ROS_WARN("No Effective Points! \n");
+        // ROS_WARN("No Effective Points! \n");
         return;
     }
 
@@ -1059,7 +1059,7 @@ int main(int argc, char** argv)
 
         if (feats_undistort->empty() || (feats_undistort == NULL))
         {
-            ROS_WARN("No point, skip this scan!\n");
+            // ROS_WARN("No point, skip this scan!\n");
             syscall(SYS_kill, 0x11111121, 0);
             return;
         }
@@ -1098,7 +1098,7 @@ int main(int argc, char** argv)
         /*** ICP and iterated Kalman filter update ***/
         if (feats_down_size < 5)
         {
-            ROS_WARN("No point, skip this scan!\n");
+            // ROS_WARN("No point, skip this scan!\n");
             syscall(SYS_kill, 0x11111121, 0);
             return;
         }
@@ -1141,6 +1141,7 @@ int main(int argc, char** argv)
 
         /******* Publish odometry *******/
         publish_odometry(pubOdomAftMapped);
+        ROS_INFO("Odom Position Height: %.1f", state_point.pos(2));
 
         /*** add the feature points to map kdtree ***/
         t3 = omp_get_wtime();
