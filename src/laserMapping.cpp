@@ -109,7 +109,17 @@ vector<vector<int>>  pointSearchInd_surf;
 vector<BoxPointType> cub_needrm;
 vector<PointVector>  Nearest_Points; 
 vector<double>       extrinT(3, 0.0);
-vector<double>       extrinR(9, 0.0);
+vector<double>       extrinR{1.0, 0.0, 0.0,
+                             0.0, 1.0, 0.0,
+                             0.0, 0.0, 1.0};
+vector<double>       lidarTBody(3, 0.0);
+vector<double>       lidarRBody{1.0, 0.0, 0.0,
+                                0.0, 1.0, 0.0,
+                                0.0, 0.0, 1.0};
+vector<double>       imuTBody(3, 0.0);
+vector<double>       imuRBody{1.0, 0.0, 0.0,
+                              0.0, 1.0, 0.0,
+                              0.0, 0.0, 1.0};
 deque<double>                     time_buffer;
 deque<PointCloudXYZI::Ptr>        lidar_buffer;
 deque<sensor_msgs::Imu::ConstPtr> imu_buffer;
@@ -134,6 +144,12 @@ V3D euler_cur;
 V3D position_last(Zero3d);
 V3D Lidar_T_wrt_IMU(Zero3d);
 M3D Lidar_R_wrt_IMU(Eye3d);
+V3D Lidar_T_wrt_BODY(Zero3d);
+M3D Lidar_R_wrt_BODY(Eye3d);
+V3D IMU_T_wrt_BODY(Zero3d);
+M3D IMU_R_wrt_BODY(Eye3d);
+V3D Base_T_wrt_WORLD(Zero3d);
+M3D Base_R_wrt_WORLD(Eye3d);
 
 /*** EKF inputs and output ***/
 MeasureGroup Measures;
@@ -148,6 +164,40 @@ geometry_msgs::PoseStamped msg_body_pose;
 
 shared_ptr<Preprocess> p_pre(new Preprocess());
 shared_ptr<ImuProcess> p_imu(new ImuProcess());
+
+bool validate_extrinsic_param(const string &name, const vector<double> &values, size_t expected_size)
+{
+    if (values.size() == expected_size) return true;
+    ROS_ERROR_STREAM("Invalid parameter " << name << ": expected " << expected_size
+                     << " values, got " << values.size());
+    return false;
+}
+
+void transformLioWorldToOdom(const V3D &p_lio, V3D &p_odom)
+{
+    p_odom = IMU_R_wrt_BODY * p_lio + IMU_T_wrt_BODY;
+}
+
+void update_base_pose()
+{
+    M3D R_W_I = state_point.rot.toRotationMatrix();
+    M3D R_B_I = IMU_R_wrt_BODY;
+    M3D R_I_B = R_B_I.transpose();
+
+    V3D pos_imu = state_point.pos;
+    M3D base_rot_lio = R_W_I * R_I_B;
+    V3D base_pos_lio = pos_imu - R_W_I * R_I_B * IMU_T_wrt_BODY;
+
+    Base_R_wrt_WORLD = R_B_I * base_rot_lio;
+    transformLioWorldToOdom(base_pos_lio, Base_T_wrt_WORLD);
+
+    Eigen::Quaterniond q_base(Base_R_wrt_WORLD);
+    q_base.normalize();
+    geoQuat.x = q_base.x();
+    geoQuat.y = q_base.y();
+    geoQuat.z = q_base.z();
+    geoQuat.w = q_base.w();
+}
 
 void SigHandle(int sig)
 {
@@ -228,7 +278,9 @@ void pointBodyToWorld(const Matrix<T, 3, 1> &pi, Matrix<T, 3, 1> &po)
 void RGBpointBodyToWorld(PointType const * const pi, PointType * const po)
 {
     V3D p_body(pi->x, pi->y, pi->z);
-    V3D p_global(state_point.rot * (state_point.offset_R_L_I*p_body + state_point.offset_T_L_I) + state_point.pos);
+    V3D p_global_lio(state_point.rot * (state_point.offset_R_L_I*p_body + state_point.offset_T_L_I) + state_point.pos);
+    V3D p_global;
+    transformLioWorldToOdom(p_global_lio, p_global);
 
     po->x = p_global(0);
     po->y = p_global(1);
@@ -236,14 +288,15 @@ void RGBpointBodyToWorld(PointType const * const pi, PointType * const po)
     po->intensity = pi->intensity;
 }
 
-void RGBpointBodyLidarToIMU(PointType const * const pi, PointType * const po)
+void RGBpointBodyLidarToBase(PointType const * const pi, PointType * const po)
 {
     V3D p_body_lidar(pi->x, pi->y, pi->z);
-    V3D p_body_imu(state_point.offset_R_L_I*p_body_lidar + state_point.offset_T_L_I);
+    V3D p_body_imu(state_point.offset_R_L_I * p_body_lidar + state_point.offset_T_L_I);
+    V3D p_body_base(IMU_R_wrt_BODY * p_body_imu + IMU_T_wrt_BODY);
 
-    po->x = p_body_imu(0);
-    po->y = p_body_imu(1);
-    po->z = p_body_imu(2);
+    po->x = p_body_base(0);
+    po->y = p_body_base(1);
+    po->z = p_body_base(2);
     po->intensity = pi->intensity;
 }
 
@@ -564,7 +617,7 @@ void publish_frame_body(const ros::Publisher & pubLaserCloudFull_body)
 
     for (int i = 0; i < size; i++)
     {
-        RGBpointBodyLidarToIMU(&feats_undistort->points[i], \
+        RGBpointBodyLidarToBase(&feats_undistort->points[i], \
                             &laserCloudIMUBody->points[i]);
     }
 
@@ -594,8 +647,22 @@ void publish_effect_world(const ros::Publisher & pubLaserCloudEffect)
 
 void publish_map(const ros::Publisher & pubLaserCloudMap)
 {
+    PointCloudXYZI::Ptr laserCloudMapOdom(new PointCloudXYZI(featsFromMap->size(), 1));
+    for (size_t i = 0; i < featsFromMap->size(); i++)
+    {
+        const PointType &pi = featsFromMap->points[i];
+        PointType &po = laserCloudMapOdom->points[i];
+        V3D p_lio(pi.x, pi.y, pi.z);
+        V3D p_odom;
+        transformLioWorldToOdom(p_lio, p_odom);
+        po.x = p_odom(0);
+        po.y = p_odom(1);
+        po.z = p_odom(2);
+        po.intensity = pi.intensity;
+    }
+
     sensor_msgs::PointCloud2 laserCloudMap;
-    pcl::toROSMsg(*featsFromMap, laserCloudMap);
+    pcl::toROSMsg(*laserCloudMapOdom, laserCloudMap);
     laserCloudMap.header.stamp = ros::Time().fromSec(lidar_end_time);
     laserCloudMap.header.frame_id = "odom";
     pubLaserCloudMap.publish(laserCloudMap);
@@ -604,9 +671,9 @@ void publish_map(const ros::Publisher & pubLaserCloudMap)
 template<typename T>
 void set_posestamp(T & out)
 {
-    out.pose.position.x = state_point.pos(0);
-    out.pose.position.y = state_point.pos(1);
-    out.pose.position.z = state_point.pos(2);
+    out.pose.position.x = Base_T_wrt_WORLD(0);
+    out.pose.position.y = Base_T_wrt_WORLD(1);
+    out.pose.position.z = Base_T_wrt_WORLD(2);
     out.pose.orientation.x = geoQuat.x;
     out.pose.orientation.y = geoQuat.y;
     out.pose.orientation.z = geoQuat.z;
@@ -621,24 +688,41 @@ void publish_odometry(const ros::Publisher & pubOdomAftMapped)
     odomAftMapped.header.stamp = ros::Time().fromSec(lidar_end_time);// ros::Time().fromSec(lidar_end_time);
     set_posestamp(odomAftMapped.pose);
 
-    /* -------- twist.linear (机体系) -------- */
-    Eigen::Vector3d vel_body = state_point.rot.conjugate() * state_point.vel;
-    odomAftMapped.twist.twist.linear.x = vel_body.x();
-    odomAftMapped.twist.twist.linear.y = vel_body.y();
-    odomAftMapped.twist.twist.linear.z = vel_body.z();
-
-    /* -------- twist.angular (机体系) -------- */
-    static Eigen::Quaterniond q_last = state_point.rot;
-    static double             t_last = lidar_end_time;
+    /* -------- twist in base_link frame -------- */
+    static bool twist_initialized = false;
+    static V3D  last_base_pos = Base_T_wrt_WORLD;
+    static M3D  last_base_rot = Base_R_wrt_WORLD;
+    static double t_last = lidar_end_time;
     double dt = lidar_end_time - t_last;
-    if (dt > 1e-3) {
-        Eigen::Quaterniond dq = q_last.conjugate() * state_point.rot;
-        Eigen::AngleAxisd  ax(dq);
-        Eigen::Vector3d    omega_body = ax.axis() * ax.angle() / dt;
+    if (!twist_initialized)
+    {
+        odomAftMapped.twist.twist.linear.x = 0.0;
+        odomAftMapped.twist.twist.linear.y = 0.0;
+        odomAftMapped.twist.twist.linear.z = 0.0;
+        odomAftMapped.twist.twist.angular.x = 0.0;
+        odomAftMapped.twist.twist.angular.y = 0.0;
+        odomAftMapped.twist.twist.angular.z = 0.0;
+        twist_initialized = true;
+    }
+    else if (dt > 1e-3)
+    {
+        V3D vel_world = (Base_T_wrt_WORLD - last_base_pos) / dt;
+        V3D vel_body = Base_R_wrt_WORLD.transpose() * vel_world;
+        odomAftMapped.twist.twist.linear.x = vel_body.x();
+        odomAftMapped.twist.twist.linear.y = vel_body.y();
+        odomAftMapped.twist.twist.linear.z = vel_body.z();
+
+        M3D dR = last_base_rot.transpose() * Base_R_wrt_WORLD;
+        Eigen::AngleAxisd ax(dR);
+        Eigen::Vector3d omega_body = ax.axis() * ax.angle() / dt;
         odomAftMapped.twist.twist.angular.x = omega_body.x();
         odomAftMapped.twist.twist.angular.y = omega_body.y();
         odomAftMapped.twist.twist.angular.z = omega_body.z();
-        q_last = state_point.rot;
+    }
+    if (dt > 1e-3)
+    {
+        last_base_pos = Base_T_wrt_WORLD;
+        last_base_rot = Base_R_wrt_WORLD;
         t_last = lidar_end_time;
     }
     
@@ -855,8 +939,16 @@ int main(int argc, char** argv)
     nh.param<bool>("mapping/extrinsic_est_en", extrinsic_est_en, true);
     nh.param<bool>("pcd_save/pcd_save_en", pcd_save_en, false);
     nh.param<int>("pcd_save/interval", pcd_save_interval, -1);
-    nh.param<vector<double>>("mapping/extrinsic_T", extrinT, vector<double>());
-    nh.param<vector<double>>("mapping/extrinsic_R", extrinR, vector<double>());
+    bool has_lidar_T_body = nh.getParam("mapping/lidar_T_wrt_body", lidarTBody);
+    bool has_lidar_R_body = nh.getParam("mapping/lidar_R_wrt_body", lidarRBody);
+    bool has_imu_T_body = nh.getParam("mapping/imu_T_wrt_body", imuTBody);
+    bool has_imu_R_body = nh.getParam("mapping/imu_R_wrt_body", imuRBody);
+    bool has_body_extrinsics = has_lidar_T_body || has_lidar_R_body || has_imu_T_body || has_imu_R_body;
+    if (!has_body_extrinsics)
+    {
+        nh.param<vector<double>>("mapping/extrinsic_T", extrinT, extrinT);
+        nh.param<vector<double>>("mapping/extrinsic_R", extrinR, extrinR);
+    }
 
     p_pre->lidar_type = lidar_type;
     cout<<"p_pre->lidar_type "<<p_pre->lidar_type<<endl;
@@ -881,8 +973,39 @@ int main(int argc, char** argv)
     memset(point_selected_surf, true, sizeof(point_selected_surf));
     memset(res_last, -1000.0f, sizeof(res_last));
 
-    Lidar_T_wrt_IMU<<VEC_FROM_ARRAY(extrinT);
-    Lidar_R_wrt_IMU<<MAT_FROM_ARRAY(extrinR);
+    if (has_body_extrinsics)
+    {
+        if (!validate_extrinsic_param("mapping/lidar_T_wrt_body", lidarTBody, 3) ||
+            !validate_extrinsic_param("mapping/lidar_R_wrt_body", lidarRBody, 9) ||
+            !validate_extrinsic_param("mapping/imu_T_wrt_body", imuTBody, 3) ||
+            !validate_extrinsic_param("mapping/imu_R_wrt_body", imuRBody, 9))
+        {
+            return 1;
+        }
+        Lidar_T_wrt_BODY<<VEC_FROM_ARRAY(lidarTBody);
+        Lidar_R_wrt_BODY<<MAT_FROM_ARRAY(lidarRBody);
+        IMU_T_wrt_BODY<<VEC_FROM_ARRAY(imuTBody);
+        IMU_R_wrt_BODY<<MAT_FROM_ARRAY(imuRBody);
+
+        Lidar_R_wrt_IMU = IMU_R_wrt_BODY.transpose() * Lidar_R_wrt_BODY;
+        Lidar_T_wrt_IMU = IMU_R_wrt_BODY.transpose() * (Lidar_T_wrt_BODY - IMU_T_wrt_BODY);
+        ROS_INFO("Using lidar/imu extrinsics wrt base_link; odometry child frame is base_link.");
+    }
+    else
+    {
+        if (!validate_extrinsic_param("mapping/extrinsic_T", extrinT, 3) ||
+            !validate_extrinsic_param("mapping/extrinsic_R", extrinR, 9))
+        {
+            return 1;
+        }
+        Lidar_T_wrt_IMU<<VEC_FROM_ARRAY(extrinT);
+        Lidar_R_wrt_IMU<<MAT_FROM_ARRAY(extrinR);
+        Lidar_T_wrt_BODY = Lidar_T_wrt_IMU;
+        Lidar_R_wrt_BODY = Lidar_R_wrt_IMU;
+        IMU_T_wrt_BODY = Zero3d;
+        IMU_R_wrt_BODY = Eye3d;
+        ROS_INFO("Using legacy lidar wrt imu extrinsic_T/extrinsic_R; base_link remains aligned with IMU.");
+    }
     p_imu->set_extrinsic(Lidar_T_wrt_IMU, Lidar_R_wrt_IMU);
     p_imu->set_gyr_cov(V3D(gyr_cov, gyr_cov, gyr_cov));
     p_imu->set_acc_cov(V3D(acc_cov, acc_cov, acc_cov));
@@ -1030,10 +1153,7 @@ int main(int argc, char** argv)
             state_point = kf.get_x();
             euler_cur = SO3ToEuler(state_point.rot);
             pos_lid = state_point.pos + state_point.rot * state_point.offset_T_L_I;
-            geoQuat.x = state_point.rot.coeffs()[0];
-            geoQuat.y = state_point.rot.coeffs()[1];
-            geoQuat.z = state_point.rot.coeffs()[2];
-            geoQuat.w = state_point.rot.coeffs()[3];
+            update_base_pose();
 
             double t_update_end = omp_get_wtime();
 

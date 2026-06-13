@@ -18,16 +18,22 @@ mapping:
     fov_degree:    360
     det_range:     50.0
     extrinsic_est_en:  false      # true: enable the online estimation of IMU-LiDAR extrinsic
-    extrinsic_T: [ 0, 0, 0.05 ]
-    extrinsic_R: [ 1, 0, 0,
-                   0, 1, 0,
-                   0, 0, 1]
+    # LiDAR and IMU poses in base_link frame: p_base = R * p_sensor + T.
+    # LiDAR and built-in IMU are pitched forward 20 deg together; set translations to measured lever arms.
+    lidar_T_wrt_body: [ 0, 0, 0 ]
+    lidar_R_wrt_body: [ 0.9396926208, 0, 0.3420201433,
+                        0, 1, 0,
+                       -0.3420201433, 0, 0.9396926208]
+    imu_T_wrt_body: [ 0, 0, 0 ]
+    imu_R_wrt_body: [ 0.9396926208, 0, 0.3420201433,
+                      0, 1, 0,
+                     -0.3420201433, 0, 0.9396926208]
 
 publish:
     path_en:  true
-    scan_publish_en:  true       # false: close all the point cloud output
-    dense_publish_en: true       # false: low down the points number in a global-frame point clouds scan.
-    scan_bodyframe_pub_en: true  # true: output the point cloud scans in IMU-body-frame
+    scan_publish_en:  false       # false: close all the point cloud output
+    dense_publish_en: false       # false: low down the points number in a global-frame point clouds scan.
+    scan_bodyframe_pub_en: false  # true: output the point cloud scans in IMU-body-frame
 
 pcd_save:
     pcd_save_en: false
