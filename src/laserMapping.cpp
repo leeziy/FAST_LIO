@@ -40,7 +40,7 @@
 #include <fstream>
 #include <csignal>
 #include <unistd.h>
-#include <sys/syscall.h>
+#include <trace_marker.h>
 #include <Python.h>
 #include <so3_math.h>
 #include <ros/ros.h>
@@ -355,7 +355,7 @@ void buffer_lidar_scan(const PointCloudXYZI::Ptr &cloud, double stamp)
 
 void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
 {
-    syscall(SYS_kill, 0x11111100, 0);
+    fast_lio::TraceMarkerScope trace_marker{0x11111100};
     double preprocess_start_time = omp_get_wtime();
     PointCloudXYZI::Ptr cloud(new PointCloudXYZI());
     p_pre->process(msg, cloud);
@@ -367,14 +367,13 @@ void standard_pcl_cbk(const sensor_msgs::PointCloud2::ConstPtr &msg)
 
     if (++scan_count < MAXN)
         s_plot11[scan_count] = omp_get_wtime() - preprocess_start_time;
-    syscall(SYS_kill, 0x11111101, 0);
 }
 
 double timediff_lidar_wrt_imu = 0.0;
 bool timediff_set_flg = false;
 void livox_pcl_cbk(const livox_ros_driver2::CustomMsg::ConstPtr &msg)
 {
-    syscall(SYS_kill, 0x11111100, 0);
+    fast_lio::TraceMarkerScope trace_marker{0x11111100};
     double preprocess_start_time = omp_get_wtime();
     double stamp = msg->header.stamp.toSec();
     PointCloudXYZI::Ptr cloud(new PointCloudXYZI());
@@ -401,12 +400,11 @@ void livox_pcl_cbk(const livox_ros_driver2::CustomMsg::ConstPtr &msg)
 
     if (++scan_count < MAXN)
         s_plot11[scan_count] = omp_get_wtime() - preprocess_start_time;
-    syscall(SYS_kill, 0x11111101, 0);
 }
 
 void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
 {
-    syscall(SYS_kill, 0x11111110, 0);
+    fast_lio::TraceMarkerScope trace_marker{0x11111110};
     sensor_msgs::Imu::Ptr msg(new sensor_msgs::Imu(*msg_in));
 
     {
@@ -426,7 +424,6 @@ void imu_cbk(const sensor_msgs::Imu::ConstPtr &msg_in)
         imu_buffer.push_back(msg);
     }
 
-    syscall(SYS_kill, 0x11111111, 0);
 }
 
 double lidar_mean_scantime = 0.0;
@@ -753,6 +750,7 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
 
     /** closest surface search and residual computation **/
     #ifdef MP_EN
+        static_assert(MP_PROC_NUM <= 8, "OpenMP Trace Marker range supports up to eight threads");
         omp_set_num_threads(MP_PROC_NUM);
         #pragma omp parallel
         {
@@ -761,7 +759,7 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
         pthread_setname_np(pthread_self(), th_name);
         double omp_t0,omp_t1,omp_t,omp_t_old;
         omp_t0 = omp_get_wtime();
-        syscall(SYS_kill, 0x11111112+2*omp_get_thread_num(), 0);
+        fast_lio::TraceMarkerScope trace_marker{0x11111130 + 2 * omp_get_thread_num()};
         #pragma omp for schedule(static)
     #endif
     for (int i = 0; i < feats_down_size; i++)
@@ -812,7 +810,6 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
       omp_t1 = omp_get_wtime(); 
       omp_t_old = omp_wcet.load();
       while ((omp_t1 - omp_t0) > omp_t_old && !omp_wcet.compare_exchange_weak(omp_t_old, (omp_t1 - omp_t0))) {}
-      syscall(SYS_kill, 0x11111113+2*omp_get_thread_num(), 0);
     }
     #endif
     
@@ -1045,11 +1042,10 @@ int main(int argc, char** argv)
     /* Odometry runs periodically on its own thread. */
     auto lio_odom_cbk = [&](const ros::WallTimerEvent &)
     {
-        syscall(SYS_kill, 0x11111120, 0);
+        fast_lio::TraceMarkerScope trace_marker{0x11111120};
 
         if (!sync_packages(Measures))
         {
-            syscall(SYS_kill, 0x11111121, 0);
             return;
         }
 
@@ -1058,7 +1054,6 @@ int main(int argc, char** argv)
             first_lidar_time = Measures.lidar_beg_time;
             p_imu->first_lidar_time = first_lidar_time;
             flg_first_scan = false;
-            syscall(SYS_kill, 0x11111121, 0);
             return;
         }
 
@@ -1078,7 +1073,6 @@ int main(int argc, char** argv)
         if (feats_undistort->empty() || (feats_undistort == NULL))
         {
             // ROS_WARN("No point, skip this scan!\n");
-            syscall(SYS_kill, 0x11111121, 0);
             return;
         }
 
@@ -1105,7 +1099,6 @@ int main(int argc, char** argv)
                 }
                 ikdtree.Build(feats_down_world->points);
             }
-            syscall(SYS_kill, 0x11111121, 0);
             return;
         }
         int featsFromMapNum = ikdtree.validnum();
@@ -1117,7 +1110,6 @@ int main(int argc, char** argv)
         if (feats_down_size < 5)
         {
             // ROS_WARN("No point, skip this scan!\n");
-            syscall(SYS_kill, 0x11111121, 0);
             return;
         }
         
@@ -1204,7 +1196,6 @@ int main(int argc, char** argv)
         double old = wcet.load();
         while (frame_time > old && !wcet.compare_exchange_weak(old, frame_time)) {}
         /**************************/
-        syscall(SYS_kill, 0x11111121, 0);
     };
 
     ros::CallbackQueue lio_odom_queue_;

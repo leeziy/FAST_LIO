@@ -3,7 +3,7 @@
 #include <system_error>
 #include <ros/ros.h>
 #include <unistd.h>
-#include <sys/syscall.h>
+#include <trace_marker.h>
 #include <stdint.h>
 
 /*
@@ -290,7 +290,7 @@ bool KD_TREE<PointType>::RebuildOnce()
     }
 
     // Trace actual rebuild work from the subtree snapshot through old-node deletion.
-    syscall(SYS_kill, 0x111111a0, 0);
+    fast_lio::TraceMarkerScope trace_marker{0x11111140};
     KD_TREE_NODE *father_ptr;
     extern std::atomic<double> rebuild_wcet;
     auto t_loop_start = std::chrono::steady_clock::now();
@@ -413,7 +413,6 @@ bool KD_TREE<PointType>::RebuildOnce()
     if ((loop_time > old)&&(!is_full_rebuild))
         rebuild_wcet.store(loop_time, std::memory_order_relaxed);
     pthread_mutex_unlock(&rebuild_ptr_mutex_lock);
-    syscall(SYS_kill, 0x111111a1, 0);
     return true;
 }
 
