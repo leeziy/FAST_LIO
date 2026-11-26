@@ -254,11 +254,16 @@ public:
         }
     };
 
+public:
+    enum class RebuildMode { Native, Callback };
+
 private:
     // Multi-thread Tree Rebuild
     bool termination_flag = false;
     bool rebuild_flag = false;
-    pthread_t rebuild_thread;
+    RebuildMode rebuild_mode;
+    bool rebuild_thread_started = false;
+    pthread_t rebuild_thread{};
     pthread_mutex_t termination_flag_mutex_lock, rebuild_ptr_mutex_lock, working_flag_mutex, search_flag_mutex;
     pthread_mutex_t rebuild_logger_mutex_lock, points_deleted_rebuild_mutex_lock;
     // queue<Operation_Logger_Type> Rebuild_Logger;
@@ -307,7 +312,10 @@ private:
 
 public:
     KD_TREE(float delete_param = 0.5, float balance_param = 0.6, float box_length = 0.2);
+    explicit KD_TREE(RebuildMode mode, float delete_param = 0.5, float balance_param = 0.6, float box_length = 0.2);
     ~KD_TREE();
+    // In Callback mode, stop the callback thread before destroying the tree.
+    bool RebuildOnce();
     void Set_delete_criterion_param(float delete_param)
     {
         delete_criterion_param = delete_param;
