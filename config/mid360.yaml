@@ -19,15 +19,15 @@ mapping:
     det_range:     50.0
     extrinsic_est_en:  false      # true: enable the online estimation of IMU-LiDAR extrinsic
     # LiDAR and IMU poses in base_link frame: p_base = R * p_sensor + T.
-    # LiDAR and built-in IMU are pitched forward 20 deg together; set translations to measured lever arms.
+    # LiDAR and built-in IMU are pitched forward 30 deg together; set translations to measured lever arms.
     lidar_T_wrt_body: [ 0, 0, 0 ]
-    lidar_R_wrt_body: [ 0.9396926208, 0, 0.3420201433,
+    lidar_R_wrt_body: [ 0.8660254038, 0, 0.5,
                         0, 1, 0,
-                       -0.3420201433, 0, 0.9396926208]
+                       -0.5, 0, 0.8660254038]
     imu_T_wrt_body: [ 0, 0, 0 ]
-    imu_R_wrt_body: [ 0.9396926208, 0, 0.3420201433,
+    imu_R_wrt_body: [ 0.8660254038, 0, 0.5,
                       0, 1, 0,
-                     -0.3420201433, 0, 0.9396926208]
+                     -0.5, 0, 0.8660254038]
 
 publish:
     path_en:  true
